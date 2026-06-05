@@ -112,5 +112,41 @@ def test_store_lists_runs_with_counts(tmp_path):
             "created_at": runs[0]["created_at"],
             "candidate_count": 2,
             "judgment_count": 0,
+            "failure_count": 0,
         }
     ]
+
+
+class FailingModel(LocalDeterministicModel):
+    name = "failing"
+
+    async def complete_json(self, messages, schema=None):
+        raise RuntimeError("model unavailable")
+
+
+def test_generation_failures_are_recorded(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+
+    try:
+        run_id = asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=FailingModel(),
+                count=2,
+                retries=1,
+            )
+        )
+        report = report_run(store=store, run_id=run_id, min_score=0.8)
+        counts = store.run_counts(run_id)
+        failures = store.list_failures(run_id=run_id, limit=10)
+    finally:
+        store.close()
+
+    assert report["summary"]["candidate_count"] == 0
+    assert report["summary"]["failure_count"] == 2
+    assert counts["candidate_count"] == 0
+    assert len(failures) == 2
+    assert failures[0]["phase"] == "generate"
+    assert failures[0]["error_type"] == "RuntimeError"

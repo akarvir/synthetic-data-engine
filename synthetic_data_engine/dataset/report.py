@@ -7,7 +7,12 @@ from typing import Any
 from synthetic_data_engine.dataset.builder import build_dataset_rows
 
 
-def summarize_records(records: list[dict[str, Any]], min_score: float, candidate_count: int | None = None) -> dict[str, Any]:
+def summarize_records(
+    records: list[dict[str, Any]],
+    min_score: float,
+    candidate_count: int | None = None,
+    failure_count: int = 0,
+) -> dict[str, Any]:
     scores = [float(record["score"]) for record in records]
     verdicts = Counter(str(record["verdict"]) for record in records)
     accepted_rows = build_dataset_rows(records, min_score=min_score)
@@ -16,6 +21,7 @@ def summarize_records(records: list[dict[str, Any]], min_score: float, candidate
         "candidate_count": candidate_count if candidate_count is not None else len(records),
         "judged_count": len(records),
         "accepted_count": len(accepted_rows),
+        "failure_count": failure_count,
         "rejected_count": verdicts.get("reject", 0),
         "verdicts": dict(sorted(verdicts.items())),
         "min_score": min(scores) if scores else None,

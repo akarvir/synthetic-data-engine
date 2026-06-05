@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--min-score", type=float)
     run.add_argument("--out", default="datasets/output.jsonl")
     run.add_argument("--concurrency", type=int, default=4)
+    run.add_argument("--retries", type=int, default=2)
     run.set_defaults(func=_run)
 
     generate = subparsers.add_parser("generate", help="Generate candidates for a task.")
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
     generate.add_argument("--model")
     generate.add_argument("--concurrency", type=int, default=4)
+    generate.add_argument("--retries", type=int, default=2)
     generate.set_defaults(func=_generate)
 
     validate_task = subparsers.add_parser("validate-task", help="Validate and summarize a task spec.")
@@ -49,12 +51,18 @@ def build_parser() -> argparse.ArgumentParser:
     list_runs.add_argument("--limit", type=int, default=20)
     list_runs.set_defaults(func=_list_runs)
 
+    list_failures = subparsers.add_parser("list-failures", help="List model or validation failures for a run.")
+    list_failures.add_argument("--run-id", default="latest")
+    list_failures.add_argument("--limit", type=int, default=20)
+    list_failures.set_defaults(func=_list_failures)
+
     judge = subparsers.add_parser("judge", help="Judge unjudged candidates in a run.")
     judge.add_argument("--run-id", default="latest")
     judge.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
     judge.add_argument("--model")
     judge.add_argument("--min-score", type=float)
     judge.add_argument("--concurrency", type=int, default=4)
+    judge.add_argument("--retries", type=int, default=2)
     judge.set_defaults(func=_judge)
 
     build_dataset = subparsers.add_parser("build-dataset", help="Export accepted candidates from a run.")
@@ -102,6 +110,7 @@ def _run(args: argparse.Namespace) -> None:
                 min_score=min_score,
                 output_path=args.out,
                 concurrency=args.concurrency,
+                retries=args.retries,
             )
         )
     finally:
@@ -126,12 +135,15 @@ def _generate(args: argparse.Namespace) -> None:
                 model=create_model(args.provider, args.model),
                 count=args.count,
                 concurrency=args.concurrency,
+                retries=args.retries,
             )
         )
+        generated = store.run_counts(run_id)["candidate_count"]
     finally:
         store.close()
     print(f"run_id={run_id}")
-    print(f"generated={args.count}")
+    print(f"requested={args.count}")
+    print(f"generated={generated}")
 
 
 def _validate_task(args: argparse.Namespace) -> None:
@@ -148,6 +160,16 @@ def _list_runs(args: argparse.Namespace) -> None:
     print(json.dumps(runs, indent=2, sort_keys=True))
 
 
+def _list_failures(args: argparse.Namespace) -> None:
+    store = SqliteStore(args.db)
+    try:
+        run_id = _resolve_run_id(store, args.run_id)
+        failures = store.list_failures(run_id=run_id, limit=args.limit)
+    finally:
+        store.close()
+    print(json.dumps(failures, indent=2, sort_keys=True))
+
+
 def _judge(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
@@ -160,6 +182,7 @@ def _judge(args: argparse.Namespace) -> None:
                 model=create_model(args.provider, args.model),
                 min_score=min_score,
                 concurrency=args.concurrency,
+                retries=args.retries,
             )
         )
     finally:

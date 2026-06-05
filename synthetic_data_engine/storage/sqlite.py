@@ -50,6 +50,16 @@ class SqliteStore:
                 verdict text not null,
                 created_at text not null
             );
+
+            create table if not exists failures (
+                id text primary key,
+                run_id text not null references runs(id),
+                phase text not null,
+                item_ref text,
+                error_type text not null,
+                error_message text not null,
+                created_at text not null
+            );
             """
         )
         self.connection.commit()
@@ -58,6 +68,23 @@ class SqliteStore:
         self.connection.execute(
             "insert into runs (id, task_name, task_spec, created_at) values (?, ?, ?, ?)",
             (run_id, task.name, json.dumps(task.to_dict(), sort_keys=True), _now()),
+        )
+        self.connection.commit()
+
+    def save_failure(
+        self,
+        failure_id: str,
+        run_id: str,
+        phase: str,
+        item_ref: str | None,
+        error: BaseException,
+    ) -> None:
+        self.connection.execute(
+            """
+            insert into failures (id, run_id, phase, item_ref, error_type, error_message, created_at)
+            values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (failure_id, run_id, phase, item_ref, type(error).__name__, str(error), _now()),
         )
         self.connection.commit()
 
@@ -179,9 +206,14 @@ class SqliteStore:
             "select count(*) as count from judgments where run_id = ?",
             (run_id,),
         ).fetchone()["count"]
+        failure_count = self.connection.execute(
+            "select count(*) as count from failures where run_id = ?",
+            (run_id,),
+        ).fetchone()["count"]
         return {
             "candidate_count": int(candidate_count),
             "judgment_count": int(judgment_count),
+            "failure_count": int(failure_count),
         }
 
     def list_runs(self, limit: int) -> list[dict[str, Any]]:
@@ -192,10 +224,12 @@ class SqliteStore:
                 r.task_name as task_name,
                 r.created_at as created_at,
                 count(distinct c.id) as candidate_count,
-                count(distinct j.id) as judgment_count
+                count(distinct j.id) as judgment_count,
+                count(distinct f.id) as failure_count
             from runs r
             left join candidates c on c.run_id = r.id
             left join judgments j on j.run_id = r.id
+            left join failures f on f.run_id = r.id
             group by r.id
             order by r.created_at desc
             limit ?
@@ -209,6 +243,31 @@ class SqliteStore:
                 "created_at": row["created_at"],
                 "candidate_count": int(row["candidate_count"]),
                 "judgment_count": int(row["judgment_count"]),
+                "failure_count": int(row["failure_count"]),
+            }
+            for row in rows
+        ]
+
+    def list_failures(self, run_id: str, limit: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            select id, run_id, phase, item_ref, error_type, error_message, created_at
+            from failures
+            where run_id = ?
+            order by created_at desc
+            limit ?
+            """,
+            (run_id, limit),
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "run_id": row["run_id"],
+                "phase": row["phase"],
+                "item_ref": row["item_ref"],
+                "error_type": row["error_type"],
+                "error_message": row["error_message"],
+                "created_at": row["created_at"],
             }
             for row in rows
         ]
