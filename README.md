@@ -14,19 +14,23 @@ The default `local` provider is deterministic and does not require API credentia
 
 ```bash
 uv run sde generate --task tasks/general-instruction.yaml --count 100
-uv run sde judge --run-id <run_id> --min-score 0.8
+uv run sde validate-task --task tasks/general-instruction.yaml
+uv run sde judge --run-id <run_id>
 uv run sde report --run-id <run_id>
 uv run sde build-dataset --run-id <run_id> --out datasets/general.jsonl
 ```
 
 The combined `run` command performs all three phases.
 
-Use `latest` when you want to inspect or report on the most recent run:
+Use `latest` when you want to operate on the most recent run. It is the default for post-generation commands:
 
 ```bash
+uv run sde judge
 uv run sde report --run-id latest
 uv run sde inspect --run-id latest
 ```
+
+When `--min-score` is omitted, commands use `selection.min_score` from the task spec, falling back to `0.8`.
 
 ## OpenAI-compatible models
 

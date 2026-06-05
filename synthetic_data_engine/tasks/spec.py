@@ -40,6 +40,10 @@ class TaskSpec:
     def required_fields(self) -> list[str]:
         return [str(field) for field in self.output_schema.get("required", [])]
 
+    @property
+    def min_score(self) -> float:
+        return float(self.selection.get("min_score", 0.8))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,

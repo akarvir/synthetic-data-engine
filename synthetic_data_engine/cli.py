@@ -9,6 +9,7 @@ from synthetic_data_engine.models.factory import create_model
 from synthetic_data_engine.pipeline import export_dataset, generate_candidates, judge_candidates, report_run, run_pipeline
 from synthetic_data_engine.storage.sqlite import SqliteStore
 from synthetic_data_engine.tasks.loader import load_task_spec
+from synthetic_data_engine.tasks.summary import summarize_task
 
 
 def main() -> None:
@@ -27,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_task_arg(run)
     _add_model_args(run)
     run.add_argument("--count", type=int, default=10)
-    run.add_argument("--min-score", type=float, default=0.8)
+    run.add_argument("--min-score", type=float)
     run.add_argument("--out", default="datasets/output.jsonl")
     run.add_argument("--concurrency", type=int, default=4)
     run.set_defaults(func=_run)
@@ -40,28 +41,32 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--concurrency", type=int, default=4)
     generate.set_defaults(func=_generate)
 
+    validate_task = subparsers.add_parser("validate-task", help="Validate and summarize a task spec.")
+    _add_task_arg(validate_task)
+    validate_task.set_defaults(func=_validate_task)
+
     judge = subparsers.add_parser("judge", help="Judge unjudged candidates in a run.")
-    judge.add_argument("--run-id", required=True)
+    judge.add_argument("--run-id", default="latest")
     judge.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
     judge.add_argument("--model")
-    judge.add_argument("--min-score", type=float, default=0.8)
+    judge.add_argument("--min-score", type=float)
     judge.add_argument("--concurrency", type=int, default=4)
     judge.set_defaults(func=_judge)
 
     build_dataset = subparsers.add_parser("build-dataset", help="Export accepted candidates from a run.")
-    build_dataset.add_argument("--run-id", required=True)
-    build_dataset.add_argument("--min-score", type=float, default=0.8)
+    build_dataset.add_argument("--run-id", default="latest")
+    build_dataset.add_argument("--min-score", type=float)
     build_dataset.add_argument("--out", default="datasets/output.jsonl")
     build_dataset.set_defaults(func=_build_dataset)
 
     report = subparsers.add_parser("report", help="Print run quality and selection summary.")
     report.add_argument("--run-id", default="latest")
-    report.add_argument("--min-score", type=float, default=0.8)
+    report.add_argument("--min-score", type=float)
     report.set_defaults(func=_report)
 
     inspect = subparsers.add_parser("inspect", help="Print accepted dataset rows as JSON lines.")
     inspect.add_argument("--run-id", default="latest")
-    inspect.add_argument("--min-score", type=float, default=0.8)
+    inspect.add_argument("--min-score", type=float)
     inspect.set_defaults(func=_inspect)
 
     return parser
@@ -80,6 +85,7 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
 
 def _run(args: argparse.Namespace) -> None:
     task = load_task_spec(args.task)
+    min_score = _task_min_score(task, args.min_score)
     store = SqliteStore(args.db)
     try:
         summary = asyncio.run(
@@ -89,7 +95,7 @@ def _run(args: argparse.Namespace) -> None:
                 generator_model=create_model(args.generator_provider, args.generator_model),
                 judge_model=create_model(args.judge_provider, args.judge_model),
                 count=args.count,
-                min_score=args.min_score,
+                min_score=min_score,
                 output_path=args.out,
                 concurrency=args.concurrency,
             )
@@ -124,31 +130,40 @@ def _generate(args: argparse.Namespace) -> None:
     print(f"generated={args.count}")
 
 
+def _validate_task(args: argparse.Namespace) -> None:
+    task = load_task_spec(args.task)
+    print(json.dumps(summarize_task(task), indent=2, sort_keys=True))
+
+
 def _judge(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
+        run_id = _resolve_run_id(store, args.run_id)
+        min_score = _run_min_score(store, run_id, args.min_score)
         judged = asyncio.run(
             judge_candidates(
                 store=store,
-                run_id=args.run_id,
+                run_id=run_id,
                 model=create_model(args.provider, args.model),
-                min_score=args.min_score,
+                min_score=min_score,
                 concurrency=args.concurrency,
             )
         )
     finally:
         store.close()
-    print(f"run_id={args.run_id}")
+    print(f"run_id={run_id}")
     print(f"judged={judged}")
 
 
 def _build_dataset(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
-        exported = export_dataset(store=store, run_id=args.run_id, output_path=args.out, min_score=args.min_score)
+        run_id = _resolve_run_id(store, args.run_id)
+        min_score = _run_min_score(store, run_id, args.min_score)
+        exported = export_dataset(store=store, run_id=run_id, output_path=args.out, min_score=min_score)
     finally:
         store.close()
-    print(f"run_id={args.run_id}")
+    print(f"run_id={run_id}")
     print(f"exported={exported}")
     print(f"output={args.out}")
 
@@ -157,7 +172,8 @@ def _inspect(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
         run_id = _resolve_run_id(store, args.run_id)
-        rows = build_dataset_rows(store.dataset_records(run_id), min_score=args.min_score)
+        min_score = _run_min_score(store, run_id, args.min_score)
+        rows = build_dataset_rows(store.dataset_records(run_id), min_score=min_score)
     finally:
         store.close()
     for row in rows:
@@ -168,7 +184,8 @@ def _report(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
         run_id = _resolve_run_id(store, args.run_id)
-        report = report_run(store=store, run_id=run_id, min_score=args.min_score)
+        min_score = _run_min_score(store, run_id, args.min_score)
+        report = report_run(store=store, run_id=run_id, min_score=min_score)
     finally:
         store.close()
     print(json.dumps(report, indent=2, sort_keys=True))
@@ -178,3 +195,15 @@ def _resolve_run_id(store: SqliteStore, run_id: str) -> str:
     if run_id == "latest":
         return store.latest_run_id()
     return run_id
+
+
+def _run_min_score(store: SqliteStore, run_id: str, provided: float | None) -> float:
+    if provided is not None:
+        return provided
+    return store.get_task_for_run(run_id).min_score
+
+
+def _task_min_score(task, provided: float | None) -> float:
+    if provided is not None:
+        return provided
+    return task.min_score
