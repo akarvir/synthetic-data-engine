@@ -29,3 +29,7 @@ output_schema:
       type: object
 selection:
   min_score: 0.8
+  difficulty_distribution:
+    easy: 0.25
+    medium: 0.5
+    hard: 0.25

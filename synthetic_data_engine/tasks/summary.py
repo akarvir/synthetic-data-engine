@@ -13,5 +13,7 @@ def summarize_task(task: TaskSpec) -> dict[str, Any]:
         "topics": task.topics,
         "required_fields": task.required_fields,
         "selection_min_score": task.min_score,
+        "selection_max_items": task.max_items,
+        "selection_difficulty_distribution": task.difficulty_distribution,
         "valid": True,
     }

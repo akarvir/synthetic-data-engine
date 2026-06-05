@@ -54,14 +54,15 @@ def test_report_summarizes_run(tmp_path):
                 output_path=output,
             )
         )
-        report = report_run(store=store, run_id=summary.run_id, min_score=0.8)
+        report = report_run(store=store, run_id=summary.run_id, min_score=0.8, max_items=2)
     finally:
         store.close()
 
     assert report["run_id"] == summary.run_id
     assert report["task_name"] == "general-instruction"
     assert report["summary"]["candidate_count"] == 4
-    assert report["summary"]["accepted_count"] == 4
+    assert report["summary"]["accepted_count"] == 2
+    assert report["summary"]["selection_max_items"] == 2
     assert report["summary"]["verdicts"] == {"accept": 4}
     assert json.loads(output.read_text(encoding="utf-8").splitlines()[0])["metadata"]["run_id"] == summary.run_id
 

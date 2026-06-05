@@ -32,3 +32,5 @@ def test_task_summary_includes_validation_ready_fields():
     assert summary["valid"] is True
     assert summary["required_fields"] == ["prompt", "answer"]
     assert summary["selection_min_score"] == 0.8
+    assert summary["selection_max_items"] is None
+    assert summary["selection_difficulty_distribution"] == {"easy": 0.25, "hard": 0.25, "medium": 0.5}

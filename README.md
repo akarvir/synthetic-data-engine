@@ -33,6 +33,7 @@ uv run sde inspect --run-id latest
 ```
 
 When `--min-score` is omitted, commands use `selection.min_score` from the task spec, falling back to `0.8`.
+When `--max-items` is omitted, commands use `selection.max_items` from the task spec when present.
 
 Generation and judging retry transient model errors twice by default. Override that with `--retries`.
 
@@ -53,4 +54,4 @@ uv run sde run \
 
 ## Task specs
 
-Task specs are YAML or JSON files. A task defines the desired dataset shape, requirements, topics, difficulty levels, and the output schema used during candidate validation.
+Task specs are YAML or JSON files. A task defines the desired dataset shape, requirements, topics, difficulty levels, selection defaults, and the output schema used during candidate validation.

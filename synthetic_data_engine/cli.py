@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_model_args(run)
     run.add_argument("--count", type=int, default=10)
     run.add_argument("--min-score", type=float)
+    run.add_argument("--max-items", type=int)
     run.add_argument("--out", default="datasets/output.jsonl")
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--retries", type=int, default=2)
@@ -68,17 +69,20 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset = subparsers.add_parser("build-dataset", help="Export accepted candidates from a run.")
     build_dataset.add_argument("--run-id", default="latest")
     build_dataset.add_argument("--min-score", type=float)
+    build_dataset.add_argument("--max-items", type=int)
     build_dataset.add_argument("--out", default="datasets/output.jsonl")
     build_dataset.set_defaults(func=_build_dataset)
 
     report = subparsers.add_parser("report", help="Print run quality and selection summary.")
     report.add_argument("--run-id", default="latest")
     report.add_argument("--min-score", type=float)
+    report.add_argument("--max-items", type=int)
     report.set_defaults(func=_report)
 
     inspect = subparsers.add_parser("inspect", help="Print accepted dataset rows as JSON lines.")
     inspect.add_argument("--run-id", default="latest")
     inspect.add_argument("--min-score", type=float)
+    inspect.add_argument("--max-items", type=int)
     inspect.set_defaults(func=_inspect)
 
     return parser
@@ -98,6 +102,7 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
 def _run(args: argparse.Namespace) -> None:
     task = load_task_spec(args.task)
     min_score = _task_min_score(task, args.min_score)
+    max_items = _task_max_items(task, args.max_items)
     store = SqliteStore(args.db)
     try:
         summary = asyncio.run(
@@ -111,6 +116,8 @@ def _run(args: argparse.Namespace) -> None:
                 output_path=args.out,
                 concurrency=args.concurrency,
                 retries=args.retries,
+                max_items=max_items,
+                difficulty_distribution=task.difficulty_distribution,
             )
         )
     finally:
@@ -195,8 +202,17 @@ def _build_dataset(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
         run_id = _resolve_run_id(store, args.run_id)
-        min_score = _run_min_score(store, run_id, args.min_score)
-        exported = export_dataset(store=store, run_id=run_id, output_path=args.out, min_score=min_score)
+        task = store.get_task_for_run(run_id)
+        min_score = _task_min_score(task, args.min_score)
+        max_items = _task_max_items(task, args.max_items)
+        exported = export_dataset(
+            store=store,
+            run_id=run_id,
+            output_path=args.out,
+            min_score=min_score,
+            max_items=max_items,
+            difficulty_distribution=task.difficulty_distribution,
+        )
     finally:
         store.close()
     print(f"run_id={run_id}")
@@ -208,8 +224,15 @@ def _inspect(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
         run_id = _resolve_run_id(store, args.run_id)
-        min_score = _run_min_score(store, run_id, args.min_score)
-        rows = build_dataset_rows(store.dataset_records(run_id), min_score=min_score)
+        task = store.get_task_for_run(run_id)
+        min_score = _task_min_score(task, args.min_score)
+        max_items = _task_max_items(task, args.max_items)
+        rows = build_dataset_rows(
+            store.dataset_records(run_id),
+            min_score=min_score,
+            max_items=max_items,
+            difficulty_distribution=task.difficulty_distribution,
+        )
     finally:
         store.close()
     for row in rows:
@@ -220,8 +243,16 @@ def _report(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
         run_id = _resolve_run_id(store, args.run_id)
-        min_score = _run_min_score(store, run_id, args.min_score)
-        report = report_run(store=store, run_id=run_id, min_score=min_score)
+        task = store.get_task_for_run(run_id)
+        min_score = _task_min_score(task, args.min_score)
+        max_items = _task_max_items(task, args.max_items)
+        report = report_run(
+            store=store,
+            run_id=run_id,
+            min_score=min_score,
+            max_items=max_items,
+            difficulty_distribution=task.difficulty_distribution,
+        )
     finally:
         store.close()
     print(json.dumps(report, indent=2, sort_keys=True))
@@ -243,3 +274,9 @@ def _task_min_score(task, provided: float | None) -> float:
     if provided is not None:
         return provided
     return task.min_score
+
+
+def _task_max_items(task, provided: int | None) -> int | None:
+    if provided is not None:
+        return provided
+    return task.max_items

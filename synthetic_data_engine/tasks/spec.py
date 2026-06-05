@@ -44,6 +44,20 @@ class TaskSpec:
     def min_score(self) -> float:
         return float(self.selection.get("min_score", 0.8))
 
+    @property
+    def max_items(self) -> int | None:
+        value = self.selection.get("max_items")
+        if value is None:
+            return None
+        return int(value)
+
+    @property
+    def difficulty_distribution(self) -> dict[str, float]:
+        value = self.selection.get("difficulty_distribution", {})
+        if not isinstance(value, dict):
+            return {}
+        return {str(key): float(weight) for key, weight in value.items()}
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,

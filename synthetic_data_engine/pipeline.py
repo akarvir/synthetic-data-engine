@@ -82,13 +82,31 @@ async def judge_candidates(
     return store.run_counts(run_id)["judgment_count"] - initial_judgment_count
 
 
-def export_dataset(store: SqliteStore, run_id: str, output_path: str | Path, min_score: float) -> int:
-    rows = build_dataset_rows(store.dataset_records(run_id), min_score=min_score)
+def export_dataset(
+    store: SqliteStore,
+    run_id: str,
+    output_path: str | Path,
+    min_score: float,
+    max_items: int | None = None,
+    difficulty_distribution: dict[str, float] | None = None,
+) -> int:
+    rows = build_dataset_rows(
+        store.dataset_records(run_id),
+        min_score=min_score,
+        max_items=max_items,
+        difficulty_distribution=difficulty_distribution,
+    )
     write_jsonl(output_path, rows)
     return len(rows)
 
 
-def report_run(store: SqliteStore, run_id: str, min_score: float) -> dict[str, object]:
+def report_run(
+    store: SqliteStore,
+    run_id: str,
+    min_score: float,
+    max_items: int | None = None,
+    difficulty_distribution: dict[str, float] | None = None,
+) -> dict[str, object]:
     records = store.dataset_records(run_id)
     counts = store.run_counts(run_id)
     return {
@@ -98,6 +116,8 @@ def report_run(store: SqliteStore, run_id: str, min_score: float) -> dict[str, o
             min_score=min_score,
             candidate_count=counts["candidate_count"],
             failure_count=counts["failure_count"],
+            max_items=max_items,
+            difficulty_distribution=difficulty_distribution,
         ),
     }
 
@@ -112,6 +132,8 @@ async def run_pipeline(
     output_path: str | Path | None,
     concurrency: int = 4,
     retries: int = 2,
+    max_items: int | None = None,
+    difficulty_distribution: dict[str, float] | None = None,
 ) -> RunSummary:
     run_id = await generate_candidates(
         store=store,
@@ -132,7 +154,14 @@ async def run_pipeline(
     )
     exported = 0
     if output_path is not None:
-        exported = export_dataset(store=store, run_id=run_id, output_path=output_path, min_score=min_score)
+        exported = export_dataset(
+            store=store,
+            run_id=run_id,
+            output_path=output_path,
+            min_score=min_score,
+            max_items=max_items,
+            difficulty_distribution=difficulty_distribution,
+        )
     return RunSummary(
         run_id=run_id,
         generated=generated,
