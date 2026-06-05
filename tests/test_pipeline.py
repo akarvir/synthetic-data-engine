@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from synthetic_data_engine.models.local import LocalDeterministicModel
-from synthetic_data_engine.pipeline import run_pipeline
+from synthetic_data_engine.pipeline import generate_candidates, report_run, run_pipeline
 from synthetic_data_engine.storage.sqlite import SqliteStore
 from synthetic_data_engine.tasks.loader import load_task_spec
 
@@ -34,3 +35,54 @@ def test_local_pipeline_exports_jsonl(tmp_path):
     rows = output.read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 3
     assert "candidate_id" in rows[0]
+
+
+def test_report_summarizes_run(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+    output = tmp_path / "dataset.jsonl"
+
+    try:
+        summary = asyncio.run(
+            run_pipeline(
+                store=store,
+                task=task,
+                generator_model=LocalDeterministicModel(),
+                judge_model=LocalDeterministicModel(),
+                count=4,
+                min_score=0.8,
+                output_path=output,
+            )
+        )
+        report = report_run(store=store, run_id=summary.run_id, min_score=0.8)
+    finally:
+        store.close()
+
+    assert report["run_id"] == summary.run_id
+    assert report["task_name"] == "general-instruction"
+    assert report["summary"]["candidate_count"] == 4
+    assert report["summary"]["accepted_count"] == 4
+    assert report["summary"]["verdicts"] == {"accept": 4}
+    assert json.loads(output.read_text(encoding="utf-8").splitlines()[0])["metadata"]["run_id"] == summary.run_id
+
+
+def test_report_counts_unjudged_candidates(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+
+    try:
+        run_id = asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=LocalDeterministicModel(),
+                count=2,
+            )
+        )
+        report = report_run(store=store, run_id=run_id, min_score=0.99)
+    finally:
+        store.close()
+
+    assert report["summary"]["candidate_count"] == 2
+    assert report["summary"]["judged_count"] == 0
+    assert report["summary"]["accepted_count"] == 0

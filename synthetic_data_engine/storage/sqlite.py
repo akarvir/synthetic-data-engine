@@ -148,6 +148,42 @@ class SqliteStore:
             for row in rows
         ]
 
+    def run_metadata(self, run_id: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "select id, task_name, task_spec, created_at from runs where id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Run not found: {run_id}")
+        return {
+            "run_id": row["id"],
+            "task_name": row["task_name"],
+            "created_at": row["created_at"],
+            "task": json.loads(row["task_spec"]),
+        }
+
+    def latest_run_id(self) -> str:
+        row = self.connection.execute(
+            "select id from runs order by created_at desc limit 1",
+        ).fetchone()
+        if row is None:
+            raise ValueError("No runs found.")
+        return str(row["id"])
+
+    def run_counts(self, run_id: str) -> dict[str, int]:
+        candidate_count = self.connection.execute(
+            "select count(*) as count from candidates where run_id = ?",
+            (run_id,),
+        ).fetchone()["count"]
+        judgment_count = self.connection.execute(
+            "select count(*) as count from judgments where run_id = ?",
+            (run_id,),
+        ).fetchone()["count"]
+        return {
+            "candidate_count": int(candidate_count),
+            "judgment_count": int(judgment_count),
+        }
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from synthetic_data_engine.dataset.builder import build_dataset_rows
 from synthetic_data_engine.dataset.exporters import write_jsonl
+from synthetic_data_engine.dataset.report import summarize_records
 from synthetic_data_engine.generation.generator import Generator
 from synthetic_data_engine.judging.judge import Judge
 from synthetic_data_engine.models.base import ModelClient
@@ -73,6 +74,15 @@ def export_dataset(store: SqliteStore, run_id: str, output_path: str | Path, min
     rows = build_dataset_rows(store.dataset_records(run_id), min_score=min_score)
     write_jsonl(output_path, rows)
     return len(rows)
+
+
+def report_run(store: SqliteStore, run_id: str, min_score: float) -> dict[str, object]:
+    records = store.dataset_records(run_id)
+    counts = store.run_counts(run_id)
+    return {
+        **store.run_metadata(run_id),
+        "summary": summarize_records(records, min_score=min_score, candidate_count=counts["candidate_count"]),
+    }
 
 
 async def run_pipeline(

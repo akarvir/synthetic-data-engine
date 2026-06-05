@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from pathlib import Path
+import json
 
 from synthetic_data_engine.dataset.builder import build_dataset_rows
-from synthetic_data_engine.dataset.exporters import write_jsonl
 from synthetic_data_engine.models.factory import create_model
-from synthetic_data_engine.pipeline import export_dataset, generate_candidates, judge_candidates, run_pipeline
+from synthetic_data_engine.pipeline import export_dataset, generate_candidates, judge_candidates, report_run, run_pipeline
 from synthetic_data_engine.storage.sqlite import SqliteStore
 from synthetic_data_engine.tasks.loader import load_task_spec
 
@@ -55,8 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--out", default="datasets/output.jsonl")
     build_dataset.set_defaults(func=_build_dataset)
 
-    inspect = subparsers.add_parser("inspect", help="Print accepted dataset rows for a run.")
-    inspect.add_argument("--run-id", required=True)
+    report = subparsers.add_parser("report", help="Print run quality and selection summary.")
+    report.add_argument("--run-id", default="latest")
+    report.add_argument("--min-score", type=float, default=0.8)
+    report.set_defaults(func=_report)
+
+    inspect = subparsers.add_parser("inspect", help="Print accepted dataset rows as JSON lines.")
+    inspect.add_argument("--run-id", default="latest")
     inspect.add_argument("--min-score", type=float, default=0.8)
     inspect.set_defaults(func=_inspect)
 
@@ -152,8 +156,25 @@ def _build_dataset(args: argparse.Namespace) -> None:
 def _inspect(args: argparse.Namespace) -> None:
     store = SqliteStore(args.db)
     try:
-        rows = build_dataset_rows(store.dataset_records(args.run_id), min_score=args.min_score)
+        run_id = _resolve_run_id(store, args.run_id)
+        rows = build_dataset_rows(store.dataset_records(run_id), min_score=args.min_score)
     finally:
         store.close()
     for row in rows:
-        print(row)
+        print(json.dumps(row, sort_keys=True))
+
+
+def _report(args: argparse.Namespace) -> None:
+    store = SqliteStore(args.db)
+    try:
+        run_id = _resolve_run_id(store, args.run_id)
+        report = report_run(store=store, run_id=run_id, min_score=args.min_score)
+    finally:
+        store.close()
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def _resolve_run_id(store: SqliteStore, run_id: str) -> str:
+    if run_id == "latest":
+        return store.latest_run_id()
+    return run_id
