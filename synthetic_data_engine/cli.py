@@ -45,6 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_task_arg(validate_task)
     validate_task.set_defaults(func=_validate_task)
 
+    list_runs = subparsers.add_parser("list-runs", help="List recent runs with candidate and judgment counts.")
+    list_runs.add_argument("--limit", type=int, default=20)
+    list_runs.set_defaults(func=_list_runs)
+
     judge = subparsers.add_parser("judge", help="Judge unjudged candidates in a run.")
     judge.add_argument("--run-id", default="latest")
     judge.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
@@ -133,6 +137,15 @@ def _generate(args: argparse.Namespace) -> None:
 def _validate_task(args: argparse.Namespace) -> None:
     task = load_task_spec(args.task)
     print(json.dumps(summarize_task(task), indent=2, sort_keys=True))
+
+
+def _list_runs(args: argparse.Namespace) -> None:
+    store = SqliteStore(args.db)
+    try:
+        runs = store.list_runs(limit=args.limit)
+    finally:
+        store.close()
+    print(json.dumps(runs, indent=2, sort_keys=True))
 
 
 def _judge(args: argparse.Namespace) -> None:

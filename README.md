@@ -15,6 +15,7 @@ The default `local` provider is deterministic and does not require API credentia
 ```bash
 uv run sde generate --task tasks/general-instruction.yaml --count 100
 uv run sde validate-task --task tasks/general-instruction.yaml
+uv run sde list-runs
 uv run sde judge --run-id <run_id>
 uv run sde report --run-id <run_id>
 uv run sde build-dataset --run-id <run_id> --out datasets/general.jsonl

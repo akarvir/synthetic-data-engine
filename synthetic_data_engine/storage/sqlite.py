@@ -184,6 +184,35 @@ class SqliteStore:
             "judgment_count": int(judgment_count),
         }
 
+    def list_runs(self, limit: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            select
+                r.id as run_id,
+                r.task_name as task_name,
+                r.created_at as created_at,
+                count(distinct c.id) as candidate_count,
+                count(distinct j.id) as judgment_count
+            from runs r
+            left join candidates c on c.run_id = r.id
+            left join judgments j on j.run_id = r.id
+            group by r.id
+            order by r.created_at desc
+            limit ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "run_id": row["run_id"],
+                "task_name": row["task_name"],
+                "created_at": row["created_at"],
+                "candidate_count": int(row["candidate_count"]),
+                "judgment_count": int(row["judgment_count"]),
+            }
+            for row in rows
+        ]
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()

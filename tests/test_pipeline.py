@@ -86,3 +86,31 @@ def test_report_counts_unjudged_candidates(tmp_path):
     assert report["summary"]["candidate_count"] == 2
     assert report["summary"]["judged_count"] == 0
     assert report["summary"]["accepted_count"] == 0
+
+
+def test_store_lists_runs_with_counts(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+
+    try:
+        run_id = asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=LocalDeterministicModel(),
+                count=2,
+            )
+        )
+        runs = store.list_runs(limit=10)
+    finally:
+        store.close()
+
+    assert runs == [
+        {
+            "run_id": run_id,
+            "task_name": "general-instruction",
+            "created_at": runs[0]["created_at"],
+            "candidate_count": 2,
+            "judgment_count": 0,
+        }
+    ]
