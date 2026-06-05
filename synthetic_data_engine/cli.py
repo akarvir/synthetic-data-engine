@@ -85,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--max-items", type=int)
     inspect.set_defaults(func=_inspect)
 
+    show_candidate = subparsers.add_parser("show-candidate", help="Print one candidate with generation and judge provenance.")
+    show_candidate.add_argument("--candidate-id", required=True)
+    show_candidate.set_defaults(func=_show_candidate)
+
     return parser
 
 
@@ -256,6 +260,15 @@ def _report(args: argparse.Namespace) -> None:
     finally:
         store.close()
     print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def _show_candidate(args: argparse.Namespace) -> None:
+    store = SqliteStore(args.db)
+    try:
+        trace = store.candidate_trace(args.candidate_id)
+    finally:
+        store.close()
+    print(json.dumps(trace, indent=2, sort_keys=True))
 
 
 def _resolve_run_id(store: SqliteStore, run_id: str) -> str:

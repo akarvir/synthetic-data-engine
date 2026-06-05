@@ -37,6 +37,7 @@ class SqliteStore:
                 run_id text not null references runs(id),
                 item_json text not null,
                 generator_model text not null,
+                prompt_messages_json text not null default '[]',
                 created_at text not null
             );
 
@@ -46,6 +47,7 @@ class SqliteStore:
                 run_id text not null references runs(id),
                 judgment_json text not null,
                 judge_model text not null,
+                prompt_messages_json text not null default '[]',
                 score real not null,
                 verdict text not null,
                 created_at text not null
@@ -62,7 +64,17 @@ class SqliteStore:
             );
             """
         )
+        self._ensure_column("candidates", "prompt_messages_json", "text not null default '[]'")
+        self._ensure_column("judgments", "prompt_messages_json", "text not null default '[]'")
         self.connection.commit()
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in self.connection.execute(f"pragma table_info({table})").fetchall()
+        }
+        if column not in columns:
+            self.connection.execute(f"alter table {table} add column {column} {definition}")
 
     def create_run(self, run_id: str, task: TaskSpec) -> None:
         self.connection.execute(
@@ -97,18 +109,27 @@ class SqliteStore:
     def save_candidate(self, run_id: str, candidate: Candidate) -> None:
         self.connection.execute(
             """
-            insert into candidates (id, run_id, item_json, generator_model, created_at)
-            values (?, ?, ?, ?, ?)
+            insert into candidates (id, run_id, item_json, generator_model, prompt_messages_json, created_at)
+            values (?, ?, ?, ?, ?, ?)
             """,
-            (candidate.id, run_id, json.dumps(candidate.item, sort_keys=True), candidate.generator_model, _now()),
+            (
+                candidate.id,
+                run_id,
+                json.dumps(candidate.item, sort_keys=True),
+                candidate.generator_model,
+                json.dumps(candidate.prompt_messages, sort_keys=True),
+                _now(),
+            ),
         )
         self.connection.commit()
 
     def save_judgment(self, run_id: str, judgment: Judgment) -> None:
         self.connection.execute(
             """
-            insert into judgments (id, candidate_id, run_id, judgment_json, judge_model, score, verdict, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into judgments (
+                id, candidate_id, run_id, judgment_json, judge_model, prompt_messages_json, score, verdict, created_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 judgment.id,
@@ -116,6 +137,7 @@ class SqliteStore:
                 run_id,
                 json.dumps(judgment.result, sort_keys=True),
                 judgment.judge_model,
+                json.dumps(judgment.prompt_messages, sort_keys=True),
                 judgment.score,
                 judgment.verdict,
                 _now(),
@@ -140,7 +162,12 @@ class SqliteStore:
                 (run_id,),
             ).fetchall()
         return [
-            Candidate(id=row["id"], item=json.loads(row["item_json"]), generator_model=row["generator_model"])
+            Candidate(
+                id=row["id"],
+                item=json.loads(row["item_json"]),
+                generator_model=row["generator_model"],
+                prompt_messages=json.loads(row["prompt_messages_json"]),
+            )
             for row in rows
         ]
 
@@ -174,6 +201,49 @@ class SqliteStore:
             }
             for row in rows
         ]
+
+    def candidate_trace(self, candidate_id: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            """
+            select
+                c.id as candidate_id,
+                c.run_id as run_id,
+                c.item_json as item_json,
+                c.generator_model as generator_model,
+                c.prompt_messages_json as generator_messages_json,
+                c.created_at as candidate_created_at,
+                j.id as judgment_id,
+                j.judgment_json as judgment_json,
+                j.judge_model as judge_model,
+                j.prompt_messages_json as judge_messages_json,
+                j.score as score,
+                j.verdict as verdict,
+                j.created_at as judgment_created_at
+            from candidates c
+            left join judgments j on j.candidate_id = c.id
+            where c.id = ?
+            order by j.created_at desc
+            limit 1
+            """,
+            (candidate_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Candidate not found: {candidate_id}")
+        return {
+            "candidate_id": row["candidate_id"],
+            "run_id": row["run_id"],
+            "item": json.loads(row["item_json"]),
+            "generator_model": row["generator_model"],
+            "generator_messages": json.loads(row["generator_messages_json"]),
+            "candidate_created_at": row["candidate_created_at"],
+            "judgment_id": row["judgment_id"],
+            "judgment": json.loads(row["judgment_json"]) if row["judgment_json"] else None,
+            "judge_model": row["judge_model"],
+            "judge_messages": json.loads(row["judge_messages_json"]) if row["judge_messages_json"] else [],
+            "score": float(row["score"]) if row["score"] is not None else None,
+            "verdict": row["verdict"],
+            "judgment_created_at": row["judgment_created_at"],
+        }
 
     def run_metadata(self, run_id: str) -> dict[str, Any]:
         row = self.connection.execute(

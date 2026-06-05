@@ -14,6 +14,7 @@ class Candidate:
     id: str
     item: dict[str, Any]
     generator_model: str
+    prompt_messages: list[dict[str, str]]
 
 
 class Generator:
@@ -37,4 +38,4 @@ class Generator:
             {"role": "user", "content": json.dumps(payload)},
         ]
         item = await self.model.complete_json(messages, schema=task.output_schema)
-        return Candidate(id=str(uuid.uuid4()), item=item, generator_model=self.model.name)
+        return Candidate(id=str(uuid.uuid4()), item=item, generator_model=self.model.name, prompt_messages=messages)

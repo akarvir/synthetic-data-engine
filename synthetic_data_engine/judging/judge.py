@@ -17,6 +17,7 @@ class Judgment:
     candidate_id: str
     result: dict[str, Any]
     judge_model: str
+    prompt_messages: list[dict[str, str]]
 
     @property
     def score(self) -> float:
@@ -45,6 +46,7 @@ class Judge:
                     "rationale": schema_result["reason"],
                 },
                 judge_model="schema-validator",
+                prompt_messages=[],
             )
 
         payload = {
@@ -70,6 +72,7 @@ class Judge:
             candidate_id=candidate.id,
             result=result,
             judge_model=self.model.name,
+            prompt_messages=messages,
         )
 
 

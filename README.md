@@ -20,6 +20,7 @@ uv run sde list-failures --run-id <run_id>
 uv run sde judge --run-id <run_id>
 uv run sde report --run-id <run_id>
 uv run sde build-dataset --run-id <run_id> --out datasets/general.jsonl
+uv run sde show-candidate --candidate-id <candidate_id>
 ```
 
 The combined `run` command performs all three phases.
