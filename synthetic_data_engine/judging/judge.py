@@ -8,6 +8,7 @@ from typing import Any
 from synthetic_data_engine.generation.generator import Candidate
 from synthetic_data_engine.models.base import ModelClient
 from synthetic_data_engine.tasks.spec import TaskSpec
+from synthetic_data_engine.tasks.validation import validate_item
 
 
 @dataclass(frozen=True)
@@ -73,11 +74,4 @@ class Judge:
 
 
 def _validate_schema(task: TaskSpec, item: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(item, dict):
-        return {"valid": False, "reason": "Candidate item is not a JSON object."}
-
-    missing = [field for field in task.required_fields if field not in item or item[field] in ("", None, [])]
-    if missing:
-        return {"valid": False, "reason": f"Candidate missing required field(s): {', '.join(missing)}."}
-
-    return {"valid": True, "reason": "Candidate has required fields."}
+    return validate_item(task.output_schema, item)
