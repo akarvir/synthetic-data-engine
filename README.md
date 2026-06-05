@@ -25,6 +25,7 @@ uv run sde show-candidate --candidate-id <candidate_id>
 ```
 
 The combined `run` command performs all three phases.
+Dataset exports write a JSONL file and a sibling `.manifest.json` file by default.
 
 Use `latest` when you want to operate on the most recent run. It is the default for post-generation commands:
 

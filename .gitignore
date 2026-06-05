@@ -12,3 +12,4 @@ wheels/
 # Generated engine artifacts
 runs/
 datasets/*.jsonl
+datasets/*.manifest.json

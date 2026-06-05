@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--min-score", type=float)
     run.add_argument("--max-items", type=int)
     run.add_argument("--out", default="datasets/output.jsonl")
+    run.add_argument("--no-manifest", action="store_true")
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--retries", type=int, default=2)
     run.set_defaults(func=_run)
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--min-score", type=float)
     build_dataset.add_argument("--max-items", type=int)
     build_dataset.add_argument("--out", default="datasets/output.jsonl")
+    build_dataset.add_argument("--no-manifest", action="store_true")
     build_dataset.set_defaults(func=_build_dataset)
 
     report = subparsers.add_parser("report", help="Print run quality and selection summary.")
@@ -124,6 +126,7 @@ def _run(args: argparse.Namespace) -> None:
                 retries=args.retries,
                 max_items=max_items,
                 difficulty_distribution=task.difficulty_distribution,
+                write_manifest=not args.no_manifest,
             )
         )
     finally:
@@ -135,6 +138,8 @@ def _run(args: argparse.Namespace) -> None:
     print(f"exported={summary.exported}")
     if summary.output_path:
         print(f"output={summary.output_path}")
+    if summary.manifest_path:
+        print(f"manifest={summary.manifest_path}")
 
 
 def _generate(args: argparse.Namespace) -> None:
@@ -222,19 +227,22 @@ def _build_dataset(args: argparse.Namespace) -> None:
         task = store.get_task_for_run(run_id)
         min_score = _task_min_score(task, args.min_score)
         max_items = _task_max_items(task, args.max_items)
-        exported = export_dataset(
+        export_result = export_dataset(
             store=store,
             run_id=run_id,
             output_path=args.out,
             min_score=min_score,
             max_items=max_items,
             difficulty_distribution=task.difficulty_distribution,
+            write_manifest=not args.no_manifest,
         )
     finally:
         store.close()
     print(f"run_id={run_id}")
-    print(f"exported={exported}")
-    print(f"output={args.out}")
+    print(f"exported={export_result.exported}")
+    print(f"output={export_result.output_path}")
+    if export_result.manifest_path:
+        print(f"manifest={export_result.manifest_path}")
 
 
 def _inspect(args: argparse.Namespace) -> None:

@@ -33,9 +33,41 @@ def test_local_pipeline_exports_jsonl(tmp_path):
     assert summary.generated == 3
     assert summary.judged == 3
     assert summary.exported == 3
+    assert summary.manifest_path is not None
+    assert summary.manifest_path.exists()
     rows = output.read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 3
     assert "candidate_id" in rows[0]
+    manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["run_id"] == summary.run_id
+    assert manifest["row_count"] == 3
+    assert manifest["selection"]["min_score"] == 0.5
+
+
+def test_pipeline_can_skip_manifest(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+    output = tmp_path / "dataset.jsonl"
+
+    try:
+        summary = asyncio.run(
+            run_pipeline(
+                store=store,
+                task=task,
+                generator_model=LocalDeterministicModel(),
+                judge_model=LocalDeterministicModel(),
+                count=1,
+                min_score=0.8,
+                output_path=output,
+                write_manifest=False,
+            )
+        )
+    finally:
+        store.close()
+
+    assert summary.exported == 1
+    assert summary.manifest_path is None
+    assert not (tmp_path / "dataset.jsonl.manifest.json").exists()
 
 
 def test_candidate_trace_includes_prompts_and_judgment(tmp_path):

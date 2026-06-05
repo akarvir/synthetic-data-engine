@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synthetic_data_engine.dataset.builder import build_dataset_rows
-from synthetic_data_engine.dataset.exporters import write_jsonl
+from synthetic_data_engine.dataset.exporters import write_json, write_jsonl
 from synthetic_data_engine.dataset.report import summarize_records
 from synthetic_data_engine.generation.generator import Generator
 from synthetic_data_engine.judging.judge import Judge
@@ -23,6 +23,14 @@ class RunSummary:
     judged: int
     exported: int
     output_path: Path | None
+    manifest_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class DatasetExport:
+    exported: int
+    output_path: Path
+    manifest_path: Path | None
 
 
 async def generate_candidates(
@@ -91,15 +99,40 @@ def export_dataset(
     min_score: float,
     max_items: int | None = None,
     difficulty_distribution: dict[str, float] | None = None,
-) -> int:
+    write_manifest: bool = True,
+) -> DatasetExport:
     rows = build_dataset_rows(
         store.dataset_records(run_id),
         min_score=min_score,
         max_items=max_items,
         difficulty_distribution=difficulty_distribution,
     )
-    write_jsonl(output_path, rows)
-    return len(rows)
+    output = Path(output_path)
+    write_jsonl(output, rows)
+    manifest_path = None
+    if write_manifest:
+        manifest_path = output.with_suffix(output.suffix + ".manifest.json")
+        write_json(
+            manifest_path,
+            {
+                "run_id": run_id,
+                "output_path": str(output),
+                "row_count": len(rows),
+                "selection": {
+                    "min_score": min_score,
+                    "max_items": max_items,
+                    "difficulty_distribution": difficulty_distribution or {},
+                },
+                "run_report": report_run(
+                    store,
+                    run_id=run_id,
+                    min_score=min_score,
+                    max_items=max_items,
+                    difficulty_distribution=difficulty_distribution,
+                ),
+            },
+        )
+    return DatasetExport(exported=len(rows), output_path=output, manifest_path=manifest_path)
 
 
 def report_run(
@@ -136,6 +169,7 @@ async def run_pipeline(
     retries: int = 2,
     max_items: int | None = None,
     difficulty_distribution: dict[str, float] | None = None,
+    write_manifest: bool = True,
 ) -> RunSummary:
     run_id = await generate_candidates(
         store=store,
@@ -154,20 +188,22 @@ async def run_pipeline(
         concurrency=concurrency,
         retries=retries,
     )
-    exported = 0
+    export_result: DatasetExport | None = None
     if output_path is not None:
-        exported = export_dataset(
+        export_result = export_dataset(
             store=store,
             run_id=run_id,
             output_path=output_path,
             min_score=min_score,
             max_items=max_items,
             difficulty_distribution=difficulty_distribution,
+            write_manifest=write_manifest,
         )
     return RunSummary(
         run_id=run_id,
         generated=generated,
         judged=judged,
-        exported=exported,
-        output_path=Path(output_path) if output_path is not None else None,
+        exported=export_result.exported if export_result is not None else 0,
+        output_path=export_result.output_path if export_result is not None else None,
+        manifest_path=export_result.manifest_path if export_result is not None else None,
     )
