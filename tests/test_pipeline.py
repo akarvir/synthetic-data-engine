@@ -169,6 +169,70 @@ def test_report_counts_unjudged_candidates(tmp_path):
     assert report["summary"]["accepted_count"] == 0
 
 
+def test_generate_candidates_appends_without_duplicate_indexes(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+
+    try:
+        run_id = asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=LocalDeterministicModel(),
+                count=1,
+            )
+        )
+        asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=LocalDeterministicModel(),
+                count=1,
+                run_id=run_id,
+            )
+        )
+        candidates = store.list_candidates(run_id)
+    finally:
+        store.close()
+
+    prompts = [candidate.item["prompt"] for candidate in candidates]
+    assert len(prompts) == 2
+    assert prompts[0] != prompts[1]
+
+
+def test_generate_candidates_continues_after_failed_attempts(tmp_path):
+    task = load_task_spec("tasks/general-instruction.yaml")
+    store = SqliteStore(tmp_path / "runs.sqlite")
+
+    try:
+        run_id = asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=FailingModel(),
+                count=1,
+                retries=0,
+            )
+        )
+        asyncio.run(
+            generate_candidates(
+                store=store,
+                task=task,
+                model=LocalDeterministicModel(),
+                count=1,
+                run_id=run_id,
+            )
+        )
+        candidates = store.list_candidates(run_id)
+        attempts = store.generation_attempt_count(run_id)
+    finally:
+        store.close()
+
+    assert len(candidates) == 1
+    assert attempts == 2
+    assert '"index": 1' in candidates[0].prompt_messages[1]["content"]
+
+
 def test_store_lists_runs_with_counts(tmp_path):
     task = load_task_spec("tasks/general-instruction.yaml")
     store = SqliteStore(tmp_path / "runs.sqlite")

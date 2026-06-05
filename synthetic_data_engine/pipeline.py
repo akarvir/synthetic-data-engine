@@ -33,10 +33,12 @@ async def generate_candidates(
     run_id: str | None = None,
     concurrency: int = 4,
     retries: int = 2,
+    start_index: int | None = None,
 ) -> str:
     actual_run_id = run_id or str(uuid.uuid4())
     if run_id is None:
         store.create_run(actual_run_id, task)
+    first_index = store.generation_attempt_count(actual_run_id) if start_index is None else start_index
 
     generator = Generator(model)
     semaphore = asyncio.Semaphore(concurrency)
@@ -50,7 +52,7 @@ async def generate_candidates(
                 return
             store.save_candidate(actual_run_id, candidate)
 
-    await asyncio.gather(*(generate_index(index) for index in range(count)))
+    await asyncio.gather(*(generate_index(first_index + index) for index in range(count)))
     return actual_run_id
 
 

@@ -35,9 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--retries", type=int, default=2)
     run.set_defaults(func=_run)
 
-    generate = subparsers.add_parser("generate", help="Generate candidates for a task.")
-    _add_task_arg(generate)
+    generate = subparsers.add_parser("generate", help="Generate candidates for a new or existing task run.")
+    generate.add_argument("--task", help="Path to a YAML or JSON task spec. Required for new runs.")
+    generate.add_argument("--run-id", help="Existing run to append to. Use latest for the most recent run.")
     generate.add_argument("--count", type=int, default=10)
+    generate.add_argument("--target-count", type=int)
     generate.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
     generate.add_argument("--model")
     generate.add_argument("--concurrency", type=int, default=4)
@@ -136,15 +138,26 @@ def _run(args: argparse.Namespace) -> None:
 
 
 def _generate(args: argparse.Namespace) -> None:
-    task = load_task_spec(args.task)
     store = SqliteStore(args.db)
     try:
+        run_id = _resolve_optional_run_id(store, args.run_id)
+        if run_id is None:
+            if not args.task:
+                raise SystemExit("--task is required when generating a new run")
+            task = load_task_spec(args.task)
+            count = args.count
+        else:
+            task = store.get_task_for_run(run_id)
+            current_count = store.run_counts(run_id)["candidate_count"]
+            count = max(0, args.target_count - current_count) if args.target_count is not None else args.count
+
         run_id = asyncio.run(
             generate_candidates(
                 store=store,
                 task=task,
                 model=create_model(args.provider, args.model),
-                count=args.count,
+                count=count,
+                run_id=run_id,
                 concurrency=args.concurrency,
                 retries=args.retries,
             )
@@ -153,7 +166,7 @@ def _generate(args: argparse.Namespace) -> None:
     finally:
         store.close()
     print(f"run_id={run_id}")
-    print(f"requested={args.count}")
+    print(f"requested={count}")
     print(f"generated={generated}")
 
 
@@ -275,6 +288,12 @@ def _resolve_run_id(store: SqliteStore, run_id: str) -> str:
     if run_id == "latest":
         return store.latest_run_id()
     return run_id
+
+
+def _resolve_optional_run_id(store: SqliteStore, run_id: str | None) -> str | None:
+    if run_id is None:
+        return None
+    return _resolve_run_id(store, run_id)
 
 
 def _run_min_score(store: SqliteStore, run_id: str, provided: float | None) -> float:

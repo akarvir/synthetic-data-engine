@@ -286,6 +286,17 @@ class SqliteStore:
             "failure_count": int(failure_count),
         }
 
+    def generation_attempt_count(self, run_id: str) -> int:
+        candidate_count = self.connection.execute(
+            "select count(*) as count from candidates where run_id = ?",
+            (run_id,),
+        ).fetchone()["count"]
+        failure_count = self.connection.execute(
+            "select count(*) as count from failures where run_id = ? and phase = 'generate'",
+            (run_id,),
+        ).fetchone()["count"]
+        return int(candidate_count) + int(failure_count)
+
     def list_runs(self, limit: int) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             """
