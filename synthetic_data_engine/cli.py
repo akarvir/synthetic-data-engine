@@ -11,6 +11,8 @@ from synthetic_data_engine.storage.sqlite import SqliteStore
 from synthetic_data_engine.tasks.loader import load_task_spec
 from synthetic_data_engine.tasks.summary import summarize_task
 
+MODEL_PROVIDERS = ["local", "ollama", "openai-compatible"]
+
 
 def main() -> None:
     parser = build_parser()
@@ -41,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--run-id", help="Existing run to append to. Use latest for the most recent run.")
     generate.add_argument("--count", type=int, default=10)
     generate.add_argument("--target-count", type=int)
-    generate.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
+    generate.add_argument("--provider", default="local", choices=MODEL_PROVIDERS)
     generate.add_argument("--model")
     generate.add_argument("--concurrency", type=int, default=4)
     generate.add_argument("--retries", type=int, default=2)
@@ -62,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     judge = subparsers.add_parser("judge", help="Judge unjudged candidates in a run.")
     judge.add_argument("--run-id", default="latest")
-    judge.add_argument("--provider", default="local", choices=["local", "openai-compatible"])
+    judge.add_argument("--provider", default="local", choices=MODEL_PROVIDERS)
     judge.add_argument("--model")
     judge.add_argument("--min-score", type=float)
     judge.add_argument("--concurrency", type=int, default=4)
@@ -101,9 +103,9 @@ def _add_task_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--generator-provider", default="local", choices=["local", "openai-compatible"])
+    parser.add_argument("--generator-provider", default="local", choices=MODEL_PROVIDERS)
     parser.add_argument("--generator-model")
-    parser.add_argument("--judge-provider", default="local", choices=["local", "openai-compatible"])
+    parser.add_argument("--judge-provider", default="local", choices=MODEL_PROVIDERS)
     parser.add_argument("--judge-model")
 
 

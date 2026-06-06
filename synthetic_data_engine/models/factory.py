@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from synthetic_data_engine.models.base import ModelClient
 from synthetic_data_engine.models.local import LocalDeterministicModel
+from synthetic_data_engine.models.ollama import OllamaModel
 from synthetic_data_engine.models.openai_compatible import OpenAICompatibleModel
 
 
@@ -12,4 +13,8 @@ def create_model(provider: str, model: str | None = None) -> ModelClient:
         if not model:
             raise ValueError("--model is required for openai-compatible")
         return OpenAICompatibleModel(model=model)
+    if provider == "ollama":
+        if not model:
+            raise ValueError("--model is required for ollama")
+        return OllamaModel(model=model)
     raise ValueError(f"Unsupported model provider: {provider}")

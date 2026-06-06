@@ -40,9 +40,33 @@ When `--max-items` is omitted, commands use `selection.max_items` from the task 
 
 Generation and judging retry transient model errors twice by default. Override that with `--retries`.
 
-## OpenAI-compatible models
+## Local Ollama models
 
-Set `OPENAI_API_KEY`, optionally set `OPENAI_BASE_URL`, and provide a model:
+You can run free local models through Ollama:
+
+```bash
+ollama pull llama3.1
+ollama serve
+```
+
+Then use Ollama as the generator and judge:
+
+```bash
+uv run sde run \
+  --task tasks/general-instruction.yaml \
+  --generator-provider ollama \
+  --generator-model llama3.1 \
+  --judge-provider ollama \
+  --judge-model llama3.1 \
+  --count 10 \
+  --out datasets/ollama.jsonl
+```
+
+Set `OLLAMA_BASE_URL` only if Ollama is not running at `http://localhost:11434/v1`.
+
+## OpenAI-compatible servers
+
+For other OpenAI-compatible servers, set `OPENAI_API_KEY`, optionally set `OPENAI_BASE_URL`, and provide a model:
 
 ```bash
 uv run sde run \
