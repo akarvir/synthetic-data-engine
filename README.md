@@ -1,55 +1,45 @@
 # Synthetic Data Engine
 
-Synthetic Data Engine generates candidate LLM training examples, judges their quality, deduplicates accepted records, and exports JSONL datasets.
+Synthetic Data Engine is a CLI for generating LLM training or evaluation datasets. It uses one model as a generator, another model as a judge, stores every run in SQLite, and exports the accepted examples as JSONL with a manifest.
 
-## Quick start
+The default workflow is:
 
-```bash
-uv run sde run --task tasks/general-instruction.yaml --count 10 --out datasets/general.jsonl
+```text
+task spec -> generator model -> candidates -> judge model -> accepted dataset
 ```
 
-The default `local` provider is deterministic and does not require API credentials. It is intended for development, tests, and pipeline smoke checks.
+## What You Can Use It For
 
-## Commands
+- Generate instruction-answer datasets for fine-tuning or evaluation.
+- Build small domain-specific datasets from repeatable YAML task specs.
+- Compare generator and judge model behavior across local and hosted models.
+- Audit synthetic examples with stored prompts, scores, verdicts, and run metadata.
+- Iterate locally with Ollama before scaling to another model server.
 
-```bash
-uv run sde generate --task tasks/general-instruction.yaml --count 100
-uv run sde generate --run-id latest --target-count 100
-uv run sde validate-task --task tasks/general-instruction.yaml
-uv run sde list-runs
-uv run sde list-failures --run-id <run_id>
-uv run sde judge --run-id <run_id>
-uv run sde report --run-id <run_id>
-uv run sde build-dataset --run-id <run_id> --out datasets/general.jsonl
-uv run sde show-candidate --candidate-id <candidate_id>
-```
+## Prerequisites
 
-The combined `run` command performs all three phases.
-Dataset exports write a JSONL file and a sibling `.manifest.json` file by default.
+- Python managed through `uv`.
+- At least one model provider:
+  - Ollama for free local models.
+  - Any OpenAI-compatible `/v1/chat/completions` server.
+  - The built-in `local` deterministic provider for smoke tests only.
 
-Use `latest` when you want to operate on the most recent run. It is the default for post-generation commands:
+Install/sync the project:
 
 ```bash
-uv run sde judge
-uv run sde report --run-id latest
-uv run sde inspect --run-id latest
+uv sync
 ```
 
-When `--min-score` is omitted, commands use `selection.min_score` from the task spec, falling back to `0.8`.
-When `--max-items` is omitted, commands use `selection.max_items` from the task spec when present.
+## Quick Start: Local Ollama
 
-Generation and judging retry transient model errors twice by default. Override that with `--retries`.
-
-## Local Ollama models
-
-You can run free local models through Ollama:
+Start Ollama and pull a model:
 
 ```bash
 ollama pull llama3.1
 ollama serve
 ```
 
-Then use Ollama as the generator and judge:
+Generate, judge, and export a dataset:
 
 ```bash
 uv run sde run \
@@ -62,11 +52,28 @@ uv run sde run \
   --out datasets/ollama.jsonl
 ```
 
-Set `OLLAMA_BASE_URL` only if Ollama is not running at `http://localhost:11434/v1`.
+Expected outputs:
 
-## OpenAI-compatible servers
+```text
+datasets/ollama.jsonl
+datasets/ollama.jsonl.manifest.json
+runs/sde.sqlite
+```
 
-For other OpenAI-compatible servers, set `OPENAI_API_KEY`, optionally set `OPENAI_BASE_URL`, and provide a model:
+If Ollama is not running at `http://localhost:11434/v1`, set:
+
+```bash
+export OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+## Quick Start: Other OpenAI-Compatible Servers
+
+Use this for hosted OpenAI-compatible APIs or local servers that expose `/v1/chat/completions`:
+
+```bash
+export OPENAI_API_KEY=<your-key>
+export OPENAI_BASE_URL=https://api.openai.com/v1
+```
 
 ```bash
 uv run sde run \
@@ -79,6 +86,115 @@ uv run sde run \
   --out datasets/general.jsonl
 ```
 
-## Task specs
+## CLI Commands
 
-Task specs are YAML or JSON files. A task defines the desired dataset shape, requirements, topics, difficulty levels, selection defaults, and the output schema used during candidate validation.
+Run the full pipeline:
+
+```bash
+uv run sde run --task tasks/general-instruction.yaml --count 10 --out datasets/general.jsonl
+```
+
+Run the phases separately:
+
+```bash
+uv run sde generate --task tasks/general-instruction.yaml --count 100
+uv run sde judge --run-id latest
+uv run sde build-dataset --run-id latest --out datasets/general.jsonl
+```
+
+Inspect and operate on runs:
+
+```bash
+uv run sde validate-task --task tasks/general-instruction.yaml
+uv run sde list-runs
+uv run sde report --run-id latest
+uv run sde list-failures --run-id latest
+uv run sde inspect --run-id latest --max-items 3
+uv run sde show-candidate --candidate-id <candidate_id>
+```
+
+Resume or top up a run:
+
+```bash
+uv run sde generate --run-id latest --target-count 100
+```
+
+## Task Specs
+
+Task specs are YAML or JSON files. A task defines the dataset shape, generation requirements, topics, difficulty levels, selection defaults, and output schema.
+
+Example:
+
+```yaml
+name: general-instruction
+domain: reasoning
+description: Generate instruction-answer examples that teach clear reasoning.
+requirements:
+  - The prompt must be specific and answerable.
+  - The answer must be concrete and useful.
+output_schema:
+  type: object
+  required:
+    - prompt
+    - answer
+  properties:
+    prompt:
+      type: string
+    answer:
+      type: string
+    metadata:
+      type: object
+selection:
+  min_score: 0.8
+```
+
+The included starter task is [tasks/general-instruction.yaml](tasks/general-instruction.yaml).
+
+## Data And Audit Trail
+
+By default the SQLite database is:
+
+```text
+runs/sde.sqlite
+```
+
+The database stores:
+
+- runs
+- generated candidates
+- judge results
+- model call failures
+- generation and judge prompt messages
+
+Every dataset export writes:
+
+- a JSONL dataset file
+- a sibling `.manifest.json` file with run ID, row count, selection settings, and run report
+
+Disable manifest creation with:
+
+```bash
+uv run sde build-dataset --run-id latest --out datasets/general.jsonl --no-manifest
+```
+
+## Selection Defaults
+
+When omitted, commands use selection settings from the task spec:
+
+- `selection.min_score`, defaulting to `0.8`
+- `selection.max_items`, when present
+- `selection.difficulty_distribution`, when present
+
+You can override common settings from the CLI:
+
+```bash
+uv run sde build-dataset --run-id latest --min-score 0.85 --max-items 100
+```
+
+## Development
+
+Run tests:
+
+```bash
+uv run pytest
+```
