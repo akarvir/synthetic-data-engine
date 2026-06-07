@@ -1,6 +1,6 @@
 # Synthetic Data Engine
 
-Synthetic Data Engine is a CLI for generating LLM training or evaluation datasets. It uses one model as a generator, another model as a judge for generating and filtering good training examples.
+This is a minimalistic CLI for generating LLM training or evaluation datasets. It uses one model as a generator, another model as a judge for generating and filtering good training examples.
 
 ## Prerequisites
 
